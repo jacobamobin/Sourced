@@ -38,8 +38,23 @@ export default function ComponentDetails({ component, supplyChainData, onClose }
       </div>
 
       {/* Description */}
-      {component.description && (
-        <p className="text-slate-300 text-sm mb-6">{component.description}</p>
+      {(component.description || componentChain?.ai_summary) && (
+        <div className="mb-6">
+          {component.description && (
+            <p className="text-slate-300 text-lg leading-relaxed mb-4">{component.description}</p>
+          )}
+          {componentChain?.ai_summary && (
+            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
+              <h4 className="text-emerald-400 text-sm font-medium mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Supply Chain Insight
+              </h4>
+              <p className="text-slate-300 text-base leading-relaxed">{componentChain.ai_summary}</p>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Supply chain info grid */}

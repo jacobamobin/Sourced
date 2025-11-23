@@ -127,11 +127,15 @@ function App() {
 
       // Process B: Supply Chain Research (Parallel)
       // We use the Gemini components because they have names (SAM components don't)
-      const componentsToResearch = productInfo.components || []
+      const allComponents = productInfo.components || []
+      // OPTIMIZATION: Only research the first 3 components initially to speed up the UI
+      // The rest will be loaded on demand when clicked
+      const componentsToResearch = allComponents.slice(0, 3)
+      
       let completedCount = 0
-      addLog(`Starting supply chain research for ${componentsToResearch.length} components...`)
+      addLog(`Starting initial supply chain research for ${componentsToResearch.length} priority components...`)
 
-      const batchSize = 5
+      const batchSize = 3
       for (let i = 0; i < componentsToResearch.length; i += batchSize) {
         const batch = componentsToResearch.slice(i, i + batchSize)
         addLog(`Researching batch ${Math.floor(i / batchSize) + 1}: ${batch.map(c => c.name).join(', ')}`)
@@ -264,7 +268,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             product_info: productInfo,
-            components: componentsToResearch // Send all components for accurate summary
+            components: allComponents // Send all components for accurate summary
           })
         })
         if (summaryRes.ok) {
@@ -296,6 +300,107 @@ function App() {
     }
   }, [])
 
+  const fetchComponentSupplyChain = async (component) => {
+    if (!productData || !component) return
+
+    // Check if already exists
+    const exists = productData.supplyChain?.supply_chain?.some(sc => sc.component_id === component.id)
+    if (exists) return
+
+    addLog(`Researching supply chain for ${component.name}...`)
+    try {
+      const res = await fetch(`${API_URL}/api/supply-chain/single`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_info: productData.product,
+          component: component
+        })
+      })
+
+      if (res.ok) {
+        const chainData = await res.json()
+        
+        setProductData(prev => {
+          if (!prev) return prev
+
+          const newSupplyChain = [...(prev.supplyChain.supply_chain || []), chainData]
+          const newNodes = [...prev.supplyChain.globe_data.nodes]
+          const newArcs = [...prev.supplyChain.globe_data.arcs]
+          const existingIds = new Set(newNodes.map(n => n.id))
+
+          // Add manufacturing nodes
+          chainData.manufacturing_locations?.forEach(loc => {
+            if (loc.lat) {
+              const id = `mfg_${loc.city}`.replace(/\s+/g, '_').toLowerCase()
+              if (!existingIds.has(id)) {
+                newNodes.push({
+                  id,
+                  name: loc.facility || loc.city,
+                  lat: loc.lat,
+                  lng: loc.lng,
+                  type: 'manufacturing',
+                  size: 1.0,
+                  color: '#3b82f6',
+                  component: chainData.component_id
+                })
+                existingIds.add(id)
+              }
+            }
+          })
+
+          // Add raw material nodes
+          chainData.raw_materials?.forEach(mat => {
+            if (mat.lat) {
+              const id = `mat_${mat.material}_${mat.source_country}`.replace(/\s+/g, '_').toLowerCase()
+              if (!existingIds.has(id)) {
+                newNodes.push({
+                  id,
+                  name: mat.material,
+                  lat: mat.lat,
+                  lng: mat.lng,
+                  type: 'raw_material',
+                  size: 0.6,
+                  color: '#10b981',
+                  source_country: mat.source_country
+                })
+                existingIds.add(id)
+              }
+
+              if (chainData.manufacturing_locations?.[0]?.lat) {
+                const mfg = chainData.manufacturing_locations[0]
+                newArcs.push({
+                  startLat: mat.lat,
+                  startLng: mat.lng,
+                  endLat: mfg.lat,
+                  endLng: mfg.lng,
+                  color: '#10b981',
+                  weight: 1,
+                  label: mat.material,
+                  type: 'material_to_manufacturing'
+                })
+              }
+            }
+          })
+
+          return {
+            ...prev,
+            supplyChain: {
+              ...prev.supplyChain,
+              supply_chain: newSupplyChain,
+              globe_data: { nodes: newNodes, arcs: newArcs },
+              total_countries: new Set([...newNodes.map(n => n.source_country || n.country).filter(Boolean)]).size
+            }
+          }
+        })
+        addLog(`Found supply chain data for ${component.name}`)
+      }
+    } catch (e) {
+      console.error("Failed to fetch supply chain", e)
+      addLog(`Failed to fetch data for ${component.name}`)
+    }
+  }
+
   const handleReset = () => {
     setStep(1)
     setProductData(null)
@@ -310,6 +415,9 @@ function App() {
       setSelectedComponent(null)
     } else {
       setSelectedComponent(component)
+      if (component) {
+        fetchComponentSupplyChain(component)
+      }
     }
   }
 
@@ -511,7 +619,7 @@ function App() {
                     />
                   </div>
                   <div className="text-left space-y-4">
-                    <h3 className="text-2xl font-bold text-white">Supporting Responsible Consumption</h3>
+                    <h3 className="text-2xl font-bold text-white">Supporting Responsible Consumption And Production</h3>
                     <p className="text-slate-300">
                       We align with United Nations Sustainable Development Goal 12 to ensure sustainable consumption and production patterns. 
                       By understanding where our products come from, we can make more informed, ethical choices.
@@ -573,7 +681,7 @@ function App() {
                       12
                     </div>
                     <span className="text-emerald-400 text-sm">
-                      Supporting UN SDG 12: Responsible Consumption
+                      Supporting UN SDG 12: Responsible Consumption and Production
                     </span>
                   </div>
                 </div>
