@@ -173,8 +173,8 @@ Update `VITE_API_URL` in frontend to point to deployed backend.
 
 | Criteria | Implementation |
 |----------|---------------|
-| **Theme** ✓ | Data Science (AI/ML) + Social Good (SDG 12) |
-| **Execution** | Full-stack app with 3D viz and AI integration |
+| **Theme** | Data Science (AI/ML) + Social Good (SDG 12) |
+| **Execution** | Full-stack app with 3D visualization and AI integration |
 | **Creativity** | Novel combination of 3D + supply chain mapping |
 | **Impact** | Enables supply chain transparency for consumers |
 
