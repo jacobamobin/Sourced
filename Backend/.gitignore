@@ -27,3 +27,16 @@ instance/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Uploads and cache (generated at runtime)
+uploads/
+cache/
+models/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
