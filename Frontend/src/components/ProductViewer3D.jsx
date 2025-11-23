@@ -5,30 +5,32 @@ import { motion } from 'framer-motion'
 import * as THREE from 'three'
 
 // Premium material presets
+// Premium material presets
 const MATERIALS = {
-  metal: { metalness: 0.9, roughness: 0.2, color: '#94a3b8' },
-  glass: { metalness: 0.1, roughness: 0.05, transmission: 0.9, thickness: 0.5, color: '#e2e8f0' },
-  plastic: { metalness: 0.1, roughness: 0.8, color: '#1e293b' },
-  silicon: { metalness: 0.6, roughness: 0.4, color: '#334155' },
-  battery: { metalness: 0.3, roughness: 0.5, color: '#0f172a' },
-  default: { metalness: 0.5, roughness: 0.5, color: '#64748b' }
+  metal: { metalness: 0.9, roughness: 0.1, color: '#94a3b8', envMapIntensity: 2.0 },
+  glass: { metalness: 0.1, roughness: 0.02, transmission: 0.98, thickness: 1.0, color: '#e2e8f0', envMapIntensity: 2.5 },
+  plastic: { metalness: 0.2, roughness: 0.4, color: '#1e293b', envMapIntensity: 0.8 },
+  silicon: { metalness: 0.5, roughness: 0.6, color: '#334155', envMapIntensity: 0.5 },
+  battery: { metalness: 0.7, roughness: 0.3, color: '#0f172a', envMapIntensity: 1.2 },
+  pcb: { metalness: 0.6, roughness: 0.4, color: '#064e3b', envMapIntensity: 1.0 }, // Dark green for PCBs
+  default: { metalness: 0.5, roughness: 0.5, color: '#64748b', envMapIntensity: 1.0 }
 }
 
 function MainProductImage({ imageUrl, dimensions, exploded, transparent }) {
   const texture = useLoader(THREE.TextureLoader, imageUrl)
   const meshRef = useRef()
-  
+
   // Calculate aspect ratio to maintain image proportions
   const aspect = texture.image ? texture.image.width / texture.image.height : 1
   const width = dimensions[0]
   const height = width / aspect
-  
+
   useFrame((state, delta) => {
     if (meshRef.current) {
       // If exploded, move back slightly and fade out
       const targetZ = exploded ? -0.5 : 0
       const targetOpacity = exploded ? 0.2 : (transparent ? 0.5 : 1)
-      
+
       meshRef.current.position.z = THREE.MathUtils.lerp(meshRef.current.position.z, targetZ, delta * 2)
       meshRef.current.material.opacity = THREE.MathUtils.lerp(meshRef.current.material.opacity, targetOpacity, delta * 2)
     }
@@ -64,10 +66,10 @@ function ComponentMesh({ component, isSelected, onClick, exploded, index, custom
   }, [position])
 
   // Don't explode if it's the shell/chassis
-  const isShell = component.name.toLowerCase().includes('chassis') || 
-                  component.name.toLowerCase().includes('frame') || 
-                  component.name.toLowerCase().includes('body') ||
-                  component.name.toLowerCase().includes('shell')
+  const isShell = component.name.toLowerCase().includes('chassis') ||
+    component.name.toLowerCase().includes('frame') ||
+    component.name.toLowerCase().includes('body') ||
+    component.name.toLowerCase().includes('shell')
 
   const targetPosition = (exploded && component.internal !== false && !isShell)
     ? explosionVector
@@ -145,14 +147,14 @@ function ComponentMesh({ component, isSelected, onClick, exploded, index, custom
 
       {/* Hover Label - Only show if hovered and not too many items labeled at once */}
       {hovered && (
-        <Html position={targetPosition} center distanceFactor={20} zIndexRange={[100, 0]}>
+        <Html position={targetPosition} center distanceFactor={8} zIndexRange={[100, 0]}>
           <div className="pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, y: 5, scale: 0.9 }}
+              initial={{ opacity: 0, y: 2, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-700/50 shadow-lg max-w-[100px]"
+              className="bg-slate-900/90 backdrop-blur-md px-1.5 py-0.5 rounded border border-slate-700/50 shadow-xl"
             >
-              <p className="text-white text-[8px] font-semibold uppercase text-center truncate leading-tight">{component.name}</p>
+              <p className="text-white text-[6px] font-bold uppercase text-center whitespace-nowrap tracking-wider leading-none">{component.name}</p>
             </motion.div>
           </div>
         </Html>
@@ -164,10 +166,10 @@ function ComponentMesh({ component, isSelected, onClick, exploded, index, custom
 function Scene({ modelData, components, selectedComponent, onComponentClick, exploded, transparent, imageUrl }) {
   // Identify shell/body component
   const shellComponent = useMemo(() => {
-    return components?.find(c => 
-      c.name.toLowerCase().includes('chassis') || 
-      c.name.toLowerCase().includes('frame') || 
-      c.name.toLowerCase().includes('body') || 
+    return components?.find(c =>
+      c.name.toLowerCase().includes('chassis') ||
+      c.name.toLowerCase().includes('frame') ||
+      c.name.toLowerCase().includes('body') ||
       c.name.toLowerCase().includes('shell') ||
       c.name.toLowerCase().includes('case') ||
       c.name.toLowerCase().includes('enclosure')
@@ -186,7 +188,7 @@ function Scene({ modelData, components, selectedComponent, onComponentClick, exp
   }
   // Normalize dimensions if it's a car (the scene is usually small scale)
   const scaleFactor = (deviceType.toLowerCase().includes('car') || deviceType.toLowerCase().includes('auto')) ? 0.2 : 1.0
-  
+
   const [width, height, depth] = dimensions[deviceType.toLowerCase()] || dimensions.smartphone
 
   return (
@@ -201,14 +203,14 @@ function Scene({ modelData, components, selectedComponent, onComponentClick, exp
 
       <Float speed={2} rotationIntensity={0.2} floatIntensity={0.2}>
         <group rotation={[0, -Math.PI / 6, 0]} scale={scaleFactor}>
-          
+
           {/* Main Product Image (The "Real" Shell) */}
           {imageUrl && (
-            <MainProductImage 
-              imageUrl={imageUrl} 
-              dimensions={[width, height]} 
-              exploded={exploded} 
-              transparent={transparent} 
+            <MainProductImage
+              imageUrl={imageUrl}
+              dimensions={[width, height]}
+              exploded={exploded}
+              transparent={transparent}
             />
           )}
 
@@ -233,36 +235,36 @@ function Scene({ modelData, components, selectedComponent, onComponentClick, exp
           {components?.map((comp, i) => {
             // Determine if this is the shell
             const isShell = comp === shellComponent
-            
+
             // Visibility logic:
             // If NOT exploded: Show Shell (opaque), Hide Internals (or show faintly)
             // If exploded: Show Shell (transparent/wireframe), Show Internals (solid)
-            
+
             let opacity = 1.0
             let isTransparent = false
             let isWireframe = false
-            
+
             if (isShell) {
-               // If we have a main image, we might want to hide the generated shell initially
-               // or make it wireframe to match the image
-               if (imageUrl && !exploded) {
-                 return null // Hide generated shell if we have the real image and not exploded
-               }
-               
-               if (exploded) {
-                 opacity = 0.1
-                 isTransparent = true
-                 isWireframe = true
-               } else {
-                 opacity = transparent ? 0.3 : 1.0
-                 isTransparent = transparent
-               }
+              // If we have a main image, we might want to hide the generated shell initially
+              // or make it wireframe to match the image
+              if (imageUrl && !exploded) {
+                return null // Hide generated shell if we have the real image and not exploded
+              }
+
+              if (exploded) {
+                opacity = 0.1
+                isTransparent = true
+                isWireframe = true
+              } else {
+                opacity = transparent ? 0.3 : 1.0
+                isTransparent = transparent
+              }
             } else {
-               // Internal component
-               if (!exploded && !transparent) {
-                 // Hide internals when collapsed and solid
-                 return null
-               }
+              // Internal component
+              if (!exploded && !transparent) {
+                // Hide internals when collapsed and solid
+                return null
+              }
             }
 
             return (
@@ -326,8 +328,8 @@ export default function ProductViewer3D({
         <button
           onClick={() => setExploded(!exploded)}
           className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all duration-300 flex items-center gap-2 ${exploded
-              ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
             }`}
         >
           <span>{exploded ? 'Merge' : 'Explode'}</span>
@@ -338,8 +340,8 @@ export default function ProductViewer3D({
         <button
           onClick={() => setTransparent(!transparent)}
           className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all duration-300 flex items-center gap-2 ${transparent
-              ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
             }`}
         >
           <span>{transparent ? 'Solid' : 'X-Ray'}</span>

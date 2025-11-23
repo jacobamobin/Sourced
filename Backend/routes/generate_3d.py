@@ -190,22 +190,31 @@ def enrich_sam_components(sam_components: list, product_info: dict) -> list:
         
         Your task is to IDENTIFY what each component likely is based on its position and size in a typical {category}, and assign it a 3D geometry type.
         
-        RULES:
-        1. Assign a specific 'name' to each component (e.g., "Battery", "Logic Board", "Engine Block", "Wheel").
-        2. Assign a 'geometry' type from: ["box", "cylinder", "sphere", "capsule", "roundedBox", "torus"].
-        3. Assign a realistic 'color' (hex code).
-        4. If a component seems to be the main body/chassis (usually large, central), name it "Chassis" or "Shell".
+        CRITICAL VISUAL RULES (INDUSTRIAL DESIGN):
+        1. **NO GENERIC BOXES:** Unless it is a screen or battery, DO NOT use "box".
+        2. **USE "roundedBox"** for chips, boards, modules, and cases. It looks much more premium.
+        3. **USE "cylinder"** for ANY circular part (wheels, fans, capacitors, screws, lenses).
+        4. **USE "torus"** for tires, rings, gaskets, or circular frames.
+        5. **USE "capsule"** for tanks, handles, or organic shapes.
         
-        GEOMETRY GUIDANCE:
-        - "cylinder": Wheels, fans, capacitors, lenses, circular parts.
-        - "box": Batteries, screens, rectangular chips, radiators.
-        - "roundedBox": Main boards, body panels, seats.
-        - "torus": Tires, rings, gaskets.
-        - "capsule": Tanks, rounded handles, suspension.
+        ACCURACY RULES:
+        1. **ROTATION IS KEY:** 
+           - Wheels/Tires MUST be rotated [0, 0, 1.5708] (90 deg on Z) to face outward.
+           - Steering wheels/Rings MUST be rotated [1.5708, 0, 0] (90 deg on X) to face up/forward.
+        2. **NAMING:** Use specific, technical names (e.g., "A15 Bionic", "Li-Ion Cell", "V8 Block", "Brembo Caliper").
+        3. **MATERIALS:** Assign "metal", "glass", "plastic", "silicon", "battery", "pcb" correctly.
+        
+        GEOMETRY & MATERIAL MAPPING:
+        - Wheels -> "cylinder" (rotated) OR "torus" (for the tire part), material: "plastic" (rubber)
+        - Chips -> "roundedBox", material: "silicon", color: "#111827"
+        - PCB -> "roundedBox", material: "pcb", color: "#064e3b"
+        - Battery -> "box", material: "battery", color: "#0f172a"
+        - Lens -> "cylinder", material: "glass", color: "#e2e8f0"
+        - Frame -> "roundedBox" or "capsule", material: "metal", color: "#64748b"
         
         Return a JSON object mapping component IDs to their new attributes:
         {{
-            "sam_0": {{ "name": "...", "geometry": "...", "color": "..." }},
+            "sam_0": {{ "name": "...", "geometry": "...", "material": "...", "color": "...", "rotation": [x, y, z] }},
             "sam_1": {{ ... }}
         }}
         """
