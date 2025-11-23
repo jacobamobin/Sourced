@@ -48,9 +48,16 @@ def identify():
         return jsonify(cached_result)
 
     # Identify product using Gemini
-    result = identify_product(image_path)
+    try:
+        result = identify_product(image_path)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error identifying product: {e}")
+        return jsonify({'error': str(e)}), 500
 
     if 'error' in result:
+        print(f"Gemini identification error: {result['error']}")
         return jsonify(result), 500
 
     # Cache result

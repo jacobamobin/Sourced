@@ -14,18 +14,19 @@ load_dotenv()
 
 # Create Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "*"])
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
 
-# Configuration
+# Configuration - use absolute paths based on script location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.config.update(
-    UPLOAD_FOLDER='uploads',
-    CACHE_FOLDER='cache',
-    MODELS_FOLDER='models',
+    UPLOAD_FOLDER=os.path.join(BASE_DIR, 'uploads'),
+    CACHE_FOLDER=os.path.join(BASE_DIR, 'cache'),
+    MODELS_FOLDER=os.path.join(BASE_DIR, 'models'),
     MAX_CONTENT_LENGTH=16 * 1024 * 1024  # 16MB max upload
 )
 
 # Ensure directories exist
-for folder in ['uploads', 'cache', 'models']:
+for folder in [app.config['UPLOAD_FOLDER'], app.config['CACHE_FOLDER'], app.config['MODELS_FOLDER']]:
     os.makedirs(folder, exist_ok=True)
 
 # Import and register routes
@@ -33,11 +34,13 @@ from routes.upload import upload_bp
 from routes.identify import identify_bp
 from routes.generate_3d import generate_3d_bp
 from routes.supply_chain import supply_chain_bp
+from routes.cache import cache_bp
 
 app.register_blueprint(upload_bp, url_prefix='/api')
 app.register_blueprint(identify_bp, url_prefix='/api')
 app.register_blueprint(generate_3d_bp, url_prefix='/api')
 app.register_blueprint(supply_chain_bp, url_prefix='/api')
+app.register_blueprint(cache_bp, url_prefix='/api')
 
 
 @app.route('/health', methods=['GET'])
@@ -85,7 +88,7 @@ def serve_model(filename):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     debug = os.environ.get('FLASK_ENV') != 'production'
     print(f"Starting Supply Chain Transparency API on port {port}")
     print(f"Gemini API configured: {bool(os.environ.get('GEMINI_API_KEY'))}")

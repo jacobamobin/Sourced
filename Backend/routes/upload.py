@@ -28,8 +28,14 @@ def upload_image():
     Request: multipart/form-data with 'image' file
     Response: {image_id, preview_url, status}
     """
+    # Debug logging
+    print(f"Upload request received - Content-Type: {request.content_type}")
+    print(f"Files in request: {list(request.files.keys())}")
+    print(f"Form data: {list(request.form.keys())}")
+    
     # Validate file presence
     if 'image' not in request.files:
+        print("ERROR: No 'image' field in request.files")
         return jsonify({'error': 'No image file provided'}), 400
 
     file = request.files['image']

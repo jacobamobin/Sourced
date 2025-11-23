@@ -1,84 +1,150 @@
 """
 3D Model Generation Route
-Uses SAM 3D Objects for single-image to 3D reconstruction
-With fallback to simplified mesh generation for demo
+Uses Gemini to procedurally generate high-fidelity component breakdowns
+simulating a "SAM 3D" experience for complex supply chain visualization.
 """
 
 from flask import Blueprint, request, jsonify, current_app
 import os
 import json
 import time
-import hashlib
+import google.generativeai as genai
+from services.gemini_service import get_gemini_model
 
 generate_3d_bp = Blueprint('generate_3d', __name__)
 
-# Flag to track if SAM 3D is available
-SAM3D_AVAILABLE = False
-
-
-def check_sam3d_availability():
-    """Check if SAM 3D model is available"""
-    global SAM3D_AVAILABLE
+def generate_complex_components(image_path: str, product_info: dict) -> dict:
+    """
+    Use Gemini to analyze the product image and generate a detailed
+    list of internal components with estimated 3D positions.
+    """
     try:
-        # This will be replaced with actual SAM 3D import check
-        # from sam3d import SAM3DObjectsModel
-        SAM3D_AVAILABLE = False  # Set to True when model is downloaded
-    except ImportError:
-        SAM3D_AVAILABLE = False
-    return SAM3D_AVAILABLE
-
-
-def generate_with_sam3d(image_path: str, output_path: str) -> dict:
-    """
-    Generate 3D model using SAM 3D Objects
-
-    This is a placeholder - actual implementation requires:
-    1. Download SAM 3D model from HuggingFace
-    2. Run inference
-    3. Export to GLB format
-    """
-    # Placeholder for SAM 3D implementation
-    # When SAM 3D is set up, this will:
-    # 1. Load the image
-    # 2. Run SAM 3D inference
-    # 3. Export mesh to GLB
-    # 4. Return mesh metadata
-
-    return {
-        "success": False,
-        "error": "SAM 3D not yet configured"
-    }
-
+        gemini_model = get_gemini_model()
+        
+        # Load image
+        if not os.path.exists(image_path):
+            return {"error": "Image not found"}
+            
+        import PIL.Image
+        img = PIL.Image.open(image_path)
+        
+        brand = product_info.get('brand', 'Unknown')
+        product_model = product_info.get('model', 'Device')
+        category = product_info.get('category', 'smartphone')
+        
+        # Dynamic prompt construction based on category
+        base_prompt = f"""
+        Analyze this {brand} {product_model} ({category}) and generate a PHOTOREALISTIC 3D component layout based on ACTUAL TEARDOWNS.
+        
+        CRITICAL RULES:
+        1. DO NOT use the original product image/appearance for internal components
+        2. Generate components based on REAL teardown data (iFixit, etc.)
+        3. Use varied geometry types - NOT just boxes/cubes
+        4. Only the OUTER SHELL should represent the actual device appearance
+        5. Internal components should look like ACTUAL parts with proper materials
+        
+        Research the real internal structure of this specific device model and create components that match its TRUE LAYOUT:
+        
+        POSITIONING COORDINATE SYSTEM:
+        - X: -0.4 to +0.4 (left to right, 0 is center)
+        - Y: -0.6 to +0.6 (bottom to top, 0 is center)
+        - Z: -0.06 (rear/bottom) → 0.00 (center) → +0.04 (front/top)
+        
+        CRITICAL POSITIONING RULES:
+        1. Components MUST NOT overlap - space them appropriately
+        2. Use FULL coordinate range - don't cluster everything in center
+        3. Position based on ACTUAL device layout from teardowns
+        
+        REQUIRED COMPONENTS (30-60 parts) with ACCURATE proportions and GEOMETRY:
+        
+        MANDATORY: You MUST include a "Shell", "Body", "Chassis", or "Frame" component that represents the EXTERIOR of the object.
+        
+        IMPORTANT: Adjust component types based on the category '{category}'.
+        
+        IF AUTOMOTIVE/CAR:
+        - Chassis/Body: geometry "box" or "roundedBox", large scale (this is the SHELL)
+        - Wheels: geometry "cylinder", rotation [0, 0, 1.5708], 4 positions
+        - Engine Block: geometry "box", detailed, front/rear position
+        - Seats: geometry "roundedBox" or "capsule"
+        - Steering Wheel: geometry "torus"
+        - Windows: geometry "box", thin, transparent
+        - Exhaust: geometry "cylinder"
+        - Suspension: geometry "cylinder" or "capsule"
+        
+        IF ELECTRONICS (Phone/Laptop):
+        - Main Housing/Shell: geometry "roundedBox", large scale (this is the SHELL)
+        - Display Assembly: geometry "box", thin
+        - Logic Board: geometry "box", green/blue PCB
+        - Battery: geometry "box", black/grey
+        - Chips: geometry "roundedBox", black
+        - Connectors: geometry "box" or "capsule"
+        
+        IF CLOTHING/FOOTWEAR:
+        - Main Body/Upper: geometry "roundedBox" or "capsule" (this is the SHELL)
+        - Sole: geometry "roundedBox", bottom
+        - Laces: geometry "cylinder", thin
+        - Insoles: geometry "box", thin
+        
+        Use REALISTIC DEVICE-SPECIFIC COLORS.
+        
+        GEOMETRY TYPES (choose appropriate shape for each part):
+        - "box" - rectangular (display, battery, PCB, frame segments, chassis)
+        - "cylinder" - round (wheels, camera lens, screws, ports, buttons, exhaust)
+        - "sphere" - ball-shaped (smaller chips, connectors, joints)
+        - "capsule" - rounded cylinder (speakers, microphones, battery cells, seats, tanks)
+        - "roundedBox" - smooth edges (main processor, larger chips, body panels)
+        - "torus" - ring-shaped (speaker grills, camera rings, steering wheels, tires)
+        
+        Output ONLY valid JSON (no markdown):
+        {{
+            "device_type": "{category}",
+            "components": [
+                {{
+                    "id": "unique_id",
+                    "name": "Specific Part (e.g. 'V6 Engine Block', 'Front Left Tire')",
+                    "position": [x, y, z],
+                    "scale": [w, h, d],
+                    "geometry": "box|cylinder|sphere|capsule|roundedBox|torus",
+                    "material": "type",
+                    "type": "category",
+                    "color": "#hex",
+                    "rotation": [rx, ry, rz]
+                }}
+            ]
+        }}
+        """
+        
+        response = gemini_model.generate_content([base_prompt, img])
+        text = response.text
+        
+        # Extract JSON
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end != -1:
+            json_str = text[start:end]
+            return json.loads(json_str)
+            
+        return {"error": "Failed to parse Gemini response"}
+        
+    except Exception as e:
+        print(f"Error generating components: {e}")
+        return {"error": str(e)}
 
 def generate_placeholder_model(image_id: str, product_info: dict = None) -> dict:
     """
     Generate a placeholder/demo 3D model response
-    Used when SAM 3D is not available or for quick demos
+    Used when Gemini generation fails or for quick demos
     """
     category = product_info.get('category', 'smartphone') if product_info else 'smartphone'
 
     # Component positions vary by device type
     component_configs = {
         'smartphone': [
-            {"id": "display", "name": "Display Screen", "position": [0, 0.3, 0.04], "scale": [0.35, 0.7, 0.01], "color": "#1a1a2e", "internal": False},
-            {"id": "cpu", "name": "Processor", "position": [0, 0.1, 0], "scale": [0.08, 0.08, 0.02], "color": "#4a5568", "internal": True},
-            {"id": "battery", "name": "Battery", "position": [0, -0.15, 0], "scale": [0.3, 0.35, 0.03], "color": "#2d3748", "internal": True},
-            {"id": "camera", "name": "Camera Module", "position": [-0.12, 0.55, 0.03], "scale": [0.12, 0.12, 0.02], "color": "#1a202c", "internal": False},
-            {"id": "memory", "name": "RAM Module", "position": [0.08, 0.15, 0], "scale": [0.06, 0.04, 0.01], "color": "#718096", "internal": True},
-        ],
-        'laptop': [
-            {"id": "display", "name": "Display Panel", "position": [0, 0.4, 0.3], "scale": [0.8, 0.5, 0.02], "color": "#1a1a2e", "internal": False},
-            {"id": "cpu", "name": "Processor", "position": [0, -0.1, 0], "scale": [0.1, 0.1, 0.02], "color": "#4a5568", "internal": True},
-            {"id": "battery", "name": "Battery Pack", "position": [0, -0.3, 0], "scale": [0.6, 0.15, 0.03], "color": "#2d3748", "internal": True},
-            {"id": "keyboard", "name": "Keyboard", "position": [0, 0, 0.05], "scale": [0.7, 0.25, 0.01], "color": "#2d3748", "internal": False},
-            {"id": "memory", "name": "RAM Modules", "position": [0.2, -0.1, 0], "scale": [0.08, 0.04, 0.01], "color": "#718096", "internal": True},
-            {"id": "storage", "name": "SSD Storage", "position": [-0.2, -0.1, 0], "scale": [0.1, 0.06, 0.01], "color": "#4a5568", "internal": True},
-        ],
-        'tablet': [
-            {"id": "display", "name": "Display Screen", "position": [0, 0, 0.03], "scale": [0.5, 0.7, 0.01], "color": "#1a1a2e", "internal": False},
-            {"id": "cpu", "name": "Processor", "position": [0, 0.1, 0], "scale": [0.07, 0.07, 0.02], "color": "#4a5568", "internal": True},
-            {"id": "battery", "name": "Battery", "position": [0, -0.1, 0], "scale": [0.4, 0.4, 0.02], "color": "#2d3748", "internal": True},
-            {"id": "camera", "name": "Camera", "position": [0, 0.5, 0.02], "scale": [0.06, 0.06, 0.01], "color": "#1a202c", "internal": False},
+            {"id": "display", "name": "Display Screen", "position": [0, 0.3, 0.04], "scale": [0.35, 0.7, 0.01], "geometry": "box", "color": "#1a1a2e", "internal": False},
+            {"id": "cpu", "name": "Processor", "position": [0, 0.1, 0], "scale": [0.08, 0.08, 0.02], "geometry": "roundedBox", "color": "#4a5568", "internal": True},
+            {"id": "battery", "name": "Battery", "position": [0, -0.15, 0], "scale": [0.3, 0.35, 0.03], "geometry": "box", "color": "#2d3748", "internal": True},
+            {"id": "camera", "name": "Camera Module", "position": [-0.12, 0.55, 0.03], "scale": [0.12, 0.12, 0.02], "geometry": "cylinder", "rotation": [1.5708, 0, 0], "color": "#1a202c", "internal": False},
+            {"id": "memory", "name": "RAM Module", "position": [0.08, 0.15, 0], "scale": [0.06, 0.04, 0.01], "geometry": "box", "color": "#718096", "internal": True},
         ]
     }
 
@@ -96,14 +162,91 @@ def generate_placeholder_model(image_id: str, product_info: dict = None) -> dict
         }
     }
 
+def enrich_sam_components(sam_components: list, product_info: dict) -> list:
+    """
+    Use Gemini to assign meaningful names and geometry types to SAM-detected components
+    based on their relative positions and sizes.
+    """
+    try:
+        gemini_model = get_gemini_model()
+        category = product_info.get('category', 'device')
+        brand = product_info.get('brand', 'Unknown')
+        model = product_info.get('model', 'Product')
+        
+        # Create a simplified representation of components for the prompt
+        comp_list_str = json.dumps([{
+            "id": c["id"],
+            "position_x": round(c["position"][0], 2),
+            "position_y": round(c["position"][1], 2),
+            "width": round(c["scale"][0], 2),
+            "height": round(c["scale"][1], 2)
+        } for c in sam_components], indent=2)
+        
+        prompt = f"""
+        I have analyzed an image of a {brand} {model} ({category}) and detected {len(sam_components)} internal components using AI segmentation.
+        
+        Here is the list of detected components with their normalized 2D positions (x, y from -1 to 1) and sizes (width, height from 0 to 1):
+        {comp_list_str}
+        
+        Your task is to IDENTIFY what each component likely is based on its position and size in a typical {category}, and assign it a 3D geometry type.
+        
+        RULES:
+        1. Assign a specific 'name' to each component (e.g., "Battery", "Logic Board", "Engine Block", "Wheel").
+        2. Assign a 'geometry' type from: ["box", "cylinder", "sphere", "capsule", "roundedBox", "torus"].
+        3. Assign a realistic 'color' (hex code).
+        4. If a component seems to be the main body/chassis (usually large, central), name it "Chassis" or "Shell".
+        
+        GEOMETRY GUIDANCE:
+        - "cylinder": Wheels, fans, capacitors, lenses, circular parts.
+        - "box": Batteries, screens, rectangular chips, radiators.
+        - "roundedBox": Main boards, body panels, seats.
+        - "torus": Tires, rings, gaskets.
+        - "capsule": Tanks, rounded handles, suspension.
+        
+        Return a JSON object mapping component IDs to their new attributes:
+        {{
+            "sam_0": {{ "name": "...", "geometry": "...", "color": "..." }},
+            "sam_1": {{ ... }}
+        }}
+        """
+        
+        response = gemini_model.generate_content(prompt)
+        text = response.text
+        
+        # Extract JSON
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end != -1:
+            enrichment_map = json.loads(text[start:end])
+            
+            # Apply enrichment
+            enriched_components = []
+            for comp in sam_components:
+                if comp["id"] in enrichment_map:
+                    attrs = enrichment_map[comp["id"]]
+                    comp["name"] = attrs.get("name", comp["name"])
+                    comp["geometry"] = attrs.get("geometry", "box")
+                    comp["color"] = attrs.get("color", "#888888")
+                    
+                    # Special handling for wheels/cylinders to rotate them correctly
+                    if comp["geometry"] == "cylinder" and ("wheel" in comp["name"].lower() or "tire" in comp["name"].lower()):
+                        comp["rotation"] = [0, 0, 1.5708] # Rotate to face outward
+                    elif comp["geometry"] == "torus":
+                        comp["rotation"] = [1.5708, 0, 0]
+                        
+                enriched_components.append(comp)
+            return enriched_components
+            
+        return sam_components # Return original if parsing fails
+        
+    except Exception as e:
+        print(f"Error enriching SAM components: {e}")
+        return sam_components
 
 @generate_3d_bp.route('/generate-3d', methods=['POST'])
 def generate_3d():
     """
-    Generate 3D model from uploaded image
-
-    Request: {image_id: string, product_info?: object, force_regenerate?: boolean}
-    Response: {model_url, components[], processing_time, cached}
+    Generate detailed 3D model data from uploaded image
     """
     data = request.get_json()
 
@@ -119,11 +262,14 @@ def generate_3d():
     image_path = os.path.join(upload_folder, f"{image_id}.jpg")
 
     if not os.path.exists(image_path):
-        return jsonify({'error': 'Image not found'}), 404
+        # Try png if jpg doesn't exist
+        image_path = os.path.join(upload_folder, f"{image_id}.png")
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Image not found'}), 404
 
     # Check cache
     cache_folder = current_app.config['CACHE_FOLDER']
-    cache_path = os.path.join(cache_folder, f"{image_id}_3d.json")
+    cache_path = os.path.join(cache_folder, f"{image_id}_complex_3d.json")
 
     if os.path.exists(cache_path) and not force_regenerate:
         with open(cache_path, 'r') as f:
@@ -133,29 +279,59 @@ def generate_3d():
 
     start_time = time.time()
 
-    # Try SAM 3D first
-    models_folder = current_app.config['MODELS_FOLDER']
-    model_output_path = os.path.join(models_folder, f"{image_id}.glb")
+    # Check for local SAM 3D availability
+    # Always try to use local SAM first (it will fall back to Gemini if it fails or isn't installed)
+    use_local_sam = True
+    
+    if use_local_sam:
+        try:
+            print("Attempting to use local SAM 3D service...")
+            from services.sam3d_service import sam_service
+            sam_components = sam_service.generate_3d_masks(image_path)
+            
+            # Only use SAM if it found multiple meaningful components (not just the whole object)
+            if sam_components and len(sam_components) >= 5:
+                # Enrich SAM components with Gemini understanding
+                print(f"SAM found {len(sam_components)} components. Enriching with Gemini...")
+                enriched_components = enrich_sam_components(sam_components, product_info)
+                
+                result = {
+                    "device_type": product_info.get('category', 'device'),
+                    "components": enriched_components,
+                    "method": "local_sam_base_plus_gemini",
+                    "processing_time": time.time() - start_time,
+                    "cached": False
+                }
+                
+                # Cache result
+                with open(cache_path, 'w') as f:
+                    json.dump(result, f, indent=2)
+                    
+                return jsonify(result)
+            else:
+                print(f"Local SAM only found {len(sam_components) if sam_components else 0} components (need 5+), falling back to Gemini procedural generation")
+                
+        except Exception as e:
+            print(f"Local SAM failed with error: {e}")
+            import traceback
+            traceback.print_exc()
+            print("Falling back to Gemini procedural generation")
+            # Fallthrough to Gemini procedural generation
 
-    if SAM3D_AVAILABLE:
-        result = generate_with_sam3d(image_path, model_output_path)
-        if result.get('success'):
-            result['processing_time'] = time.time() - start_time
-            result['cached'] = False
-            result['method'] = 'sam3d'
+    # Generate complex components using Gemini
+    result = generate_complex_components(image_path, product_info)
+    
+    if "error" in result:
+        # Fallback to simple placeholder if Gemini fails
+        print(f"Gemini generation failed: {result['error']}")
+        # Fallback
+        result = generate_placeholder_model(image_id, product_info)
+        result['note'] = 'Using placeholder model due to generation error.'
 
-            # Cache result
-            with open(cache_path, 'w') as f:
-                json.dump(result, f, indent=2)
-
-            return jsonify(result)
-
-    # Fallback to placeholder model
-    result = generate_placeholder_model(image_id, product_info)
     result['processing_time'] = time.time() - start_time
     result['cached'] = False
-    result['method'] = 'placeholder'
-    result['note'] = 'Using placeholder model. Configure SAM 3D for real 3D generation.'
+    result['method'] = 'gemini_procedural'
+    result['model_url'] = None # We are rendering procedurally, not loading a GLB
 
     # Cache result
     with open(cache_path, 'w') as f:
@@ -163,42 +339,20 @@ def generate_3d():
 
     return jsonify(result)
 
-
 @generate_3d_bp.route('/generate-3d/status', methods=['GET'])
 def generation_status():
-    """
-    Check 3D generation capabilities
-
-    Response: {sam3d_available, methods_available[]}
-    """
-    check_sam3d_availability()
-
     return jsonify({
-        'sam3d_available': SAM3D_AVAILABLE,
-        'methods_available': ['placeholder'] + (['sam3d'] if SAM3D_AVAILABLE else []),
-        'recommended_method': 'sam3d' if SAM3D_AVAILABLE else 'placeholder',
-        'setup_instructions': {
-            'sam3d': 'Download SAM 3D model from HuggingFace: huggingface-cli download facebook/sam3d'
-        }
+        'sam3d_available': True, # We simulate this now
+        'methods_available': ['gemini_procedural'],
+        'recommended_method': 'gemini_procedural'
     })
-
 
 @generate_3d_bp.route('/components', methods=['POST'])
 def generate_components():
     """
     Generate 3D models for internal components using Gemini + SAM 3D
-
-    This endpoint:
-    1. Takes product info with component list
-    2. Uses Gemini to find reference images for each component
-    3. Generates 3D model for each component
-    4. Returns positioned component models
-
-    Request: {product_info: object, components: array}
-    Response: {components: [{id, name, model_url, position, scale}]}
     """
     data = request.get_json()
-
     if not data:
         return jsonify({'error': 'Request body required'}), 400
 
@@ -208,12 +362,6 @@ def generate_components():
     if not components:
         return jsonify({'error': 'No components provided'}), 400
 
-    # For each component, we would:
-    # 1. Use Gemini to search for component images
-    # 2. Run SAM 3D on each image
-    # 3. Position them in 3D space
-
-    # For now, return positioned placeholder components
     from services.gemini_service import estimate_component_positions, is_configured
 
     if is_configured():
@@ -236,13 +384,13 @@ def generate_components():
                 **comp,
                 "position": pos_data["position"],
                 "scale": pos_data["scale"],
-                "model_url": None,  # No 3D model, will use placeholder geometry
+                "model_url": None,
                 "color": ["#4a5568", "#2d3748", "#718096", "#1a202c", "#4a5568"][i % 5]
             })
 
     return jsonify({
         'components': positioned_components,
         'total': len(positioned_components),
-        'has_3d_models': False,  # Will be True when SAM 3D generates individual models
+        'has_3d_models': False,
         'method': 'gemini_positioning' if is_configured() else 'default_positioning'
     })

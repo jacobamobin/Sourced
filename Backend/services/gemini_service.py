@@ -19,8 +19,9 @@ try:
 
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        vision_model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use Gemini 2.0 Flash for maximum speed and efficiency
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        vision_model = genai.GenerativeModel('gemini-2.0-flash')
     else:
         model = None
         vision_model = None
@@ -35,6 +36,11 @@ def is_configured():
     return model is not None and GEMINI_API_KEY is not None
 
 
+def get_gemini_model():
+    """Get the initialized Gemini model"""
+    return model
+
+
 def identify_product(image_path: str) -> dict:
     """
     Identify a product from an image using Gemini Vision
@@ -47,31 +53,28 @@ def identify_product(image_path: str) -> dict:
         # Load image
         image = Image.open(image_path)
 
-        prompt = """Analyze this product image carefully and identify:
+        prompt = """Analyze this product image carefully and identify it with EXTREME DETAIL.
 
-1. Brand name (e.g., Apple, Samsung, Sony)
-2. Model name/number (e.g., iPhone 15 Pro, Galaxy S24)
-3. Product category (smartphone, laptop, tablet, headphones, camera, etc.)
+1. Brand name
+2. Model name/number
+3. Product category
 4. Approximate release year
-5. List of known internal components for this specific product
+5. A COMPREHENSIVE list of internal components (aim for 30-50+ distinct parts). Include everything from the main processor to specific sensors, connectors, screws, adhesives, and shielding.
 
 Return ONLY valid JSON in this exact format:
 {
-    "brand": "Apple",
-    "model": "iPhone 15 Pro",
-    "category": "smartphone",
-    "year": "2023",
+    "brand": "Brand",
+    "model": "Model",
+    "category": "category",
+    "year": "YYYY",
     "confidence": 95,
     "components": [
-        {"id": "cpu", "name": "A17 Pro Processor", "manufacturer": "TSMC"},
-        {"id": "display", "name": "Super Retina XDR OLED Display", "manufacturer": "Samsung/LG"},
-        {"id": "battery", "name": "Lithium-ion Battery 3274mAh", "manufacturer": "ATL/BYD"},
-        {"id": "camera", "name": "48MP Main Camera Sensor", "manufacturer": "Sony"},
-        {"id": "memory", "name": "8GB LPDDR5 RAM", "manufacturer": "SK Hynix/Micron"}
+        {"id": "unique_id", "name": "Detailed Component Name", "manufacturer": "Specific Manufacturer"},
+        ...
     ]
 }
 
-Be specific about component manufacturers when known. If unsure, provide best estimate."""
+Be specific about manufacturers (e.g., 'Murata' for capacitors, 'Bosch' for sensors)."""
 
         response = vision_model.generate_content([prompt, image])
 
@@ -145,46 +148,66 @@ def research_supply_chain(component: dict, product_info: dict) -> dict:
     Research supply chain data for a component using Gemini
     Returns: Manufacturing locations, suppliers, raw materials, etc.
     """
+    # Fallback to batch implementation for single item to maintain consistency
+    result = research_supply_chain_batch([component], product_info)
+    return result[0] if result else {}
+
+def research_supply_chain_batch(components: list, product_info: dict) -> list:
+    """
+    Research supply chain data for multiple components in a single Gemini call
+    to improve performance and reduce API calls.
+    """
     if not is_configured():
-        return {"error": "Gemini API not configured"}
+        return []
 
     try:
-        component_name = component.get('name', component.get('id', 'Unknown'))
-        manufacturer = component.get('manufacturer', 'Unknown')
         product_name = f"{product_info.get('brand', '')} {product_info.get('model', '')}"
+        
+        # Prepare simplified component list for prompt
+        comp_list_str = json.dumps([
+            {
+                "id": c.get('id'),
+                "name": c.get('name'),
+                "manufacturer": c.get('manufacturer', 'Unknown')
+            } 
+            for c in components
+        ], indent=2)
 
-        prompt = f"""Research the supply chain for this electronic component:
-
-Component: {component_name}
-Manufacturer: {manufacturer}
-Used in: {product_name}
-
-Based on your knowledge, provide:
-1. Primary manufacturing locations (factory name, city, country)
-2. Key suppliers in the supply chain
-3. Raw materials required and their typical source countries
-4. Common sustainability certifications
-
-Return ONLY valid JSON:
-{{
-    "component_id": "{component.get('id', 'unknown')}",
-    "component_name": "{component_name}",
-    "manufacturer": "{manufacturer}",
-    "manufacturing_locations": [
-        {{"facility": "Factory Name", "city": "City", "country": "Country", "type": "manufacturing"}}
-    ],
-    "suppliers": [
-        {{"name": "Supplier Name", "provides": "What they provide", "country": "Country"}}
-    ],
-    "raw_materials": [
-        {{"material": "Material Name", "source_country": "Country"}}
-    ],
-    "certifications": ["ISO 14001", "RoHS"],
-    "sustainability_notes": "Brief notes about sustainability practices"
-}}"""
+        prompt = f"""Research the global supply chain for these components of a {product_name}.
+        
+        Components:
+        {comp_list_str}
+        
+        For EACH component, provide:
+        1. Likely manufacturing location (City, Country). BE SPECIFIC. Do not just say "China". Say "Shenzhen, China" or "Hsinchu, Taiwan".
+        2. Key raw materials and their source countries.
+        3. A short AI summary (2-3 sentences) explaining the supply chain complexity and ethical/environmental considerations for this specific component.
+        
+        Return a JSON ARRAY where each object matches this structure:
+        {{
+            "component_id": "id_from_input",
+            "component_name": "name_from_input",
+            "manufacturer": "manufacturer_from_input",
+            "manufacturing_locations": [
+                {{"facility": "Specific Factory Name", "city": "City", "country": "Country", "type": "manufacturing"}}
+            ],
+            "suppliers": [
+                {{"name": "Supplier Name", "provides": "Material/Part", "country": "Country"}}
+            ],
+            "raw_materials": [
+                {{"material": "Specific Material (e.g. Cobalt, Gold)", "source_country": "Country"}}
+            ],
+            "ai_summary": "Short explanation of supply chain complexity..."
+        }}
+        
+        IMPORTANT:
+        - The goal is to visualize a GLOBAL network. Use diverse real-world locations.
+        - Include raw material sources from Africa, South America, Australia, etc.
+        - Return ONLY the JSON array.
+        """
 
         response = model.generate_content(prompt)
-
+        
         # Parse response
         text = response.text.strip()
         if text.startswith('```'):
@@ -192,23 +215,22 @@ Return ONLY valid JSON:
             text = '\n'.join(lines[1:-1])
         if text.startswith('json'):
             text = text[4:].strip()
+            
+        results = json.loads(text)
+        
+        # Ensure we have a list
+        if isinstance(results, dict):
+            results = [results]
+            
+        return results
 
-        return json.loads(text)
-
-    except json.JSONDecodeError:
-        return {
-            "component_id": component.get('id', 'unknown'),
-            "component_name": component.get('name', 'Unknown'),
-            "manufacturing_locations": [],
-            "suppliers": [],
-            "raw_materials": [],
-            "error": "Could not parse supply chain data"
-        }
     except Exception as e:
-        return {
-            "component_id": component.get('id', 'unknown'),
-            "error": str(e)
-        }
+        print(f"Batch supply chain error: {e}")
+        # Return empty structures with error for each component
+        return [{
+            "component_id": c.get('id'),
+            "error": "Failed to fetch data"
+        } for c in components]
 
 
 def estimate_component_positions(components: list, product_info: dict) -> list:
@@ -276,3 +298,60 @@ Return ONLY a JSON array with positions (no markdown, no explanation):
                 comp['scale'] = [0.1, 0.1, 0.05]
 
         return components
+
+
+def generate_product_summary(product_info: dict, components: list) -> dict:
+    """
+    Generate a high-level AI summary of the product's supply chain complexity
+    and environmental impact.
+    """
+    if not is_configured():
+        return {
+            "summary": "Gemini API not configured.",
+            "complexity_score": 0,
+            "sustainability_rating": "Unknown"
+        }
+
+    try:
+        product_name = f"{product_info.get('brand', '')} {product_info.get('model', '')}"
+        category = product_info.get('category', 'device')
+        
+        prompt = f"""
+        Analyze the supply chain complexity and environmental impact of a {product_name} ({category}).
+        
+        Based on typical supply chains for this type of product (containing components like {', '.join([c.get('name', '') for c in components[:5]])}), provide:
+        
+        1. A concise Executive Summary (3-4 sentences) explaining the global nature of its production.
+        2. A Complexity Score (1-100) based on the number of countries and specialized processes involved.
+        3. A Sustainability Rating (Low/Medium/High) with a brief reason why.
+        4. Key Ethical/Environmental Risks (bullet points).
+        
+        Return valid JSON:
+        {{
+            "summary": "Executive summary text...",
+            "complexity_score": 85,
+            "sustainability_rating": "Medium",
+            "sustainability_reason": "Reasoning...",
+            "key_risks": ["Risk 1", "Risk 2"]
+        }}
+        """
+        
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        
+        if text.startswith('```'):
+            lines = text.split('\n')
+            text = '\n'.join(lines[1:-1])
+        if text.startswith('json'):
+            text = text[4:].strip()
+            
+        return json.loads(text)
+        
+    except Exception as e:
+        print(f"Error generating product summary: {e}")
+        return {
+            "summary": "Failed to generate summary.",
+            "complexity_score": 0,
+            "sustainability_rating": "Unknown",
+            "key_risks": []
+        }

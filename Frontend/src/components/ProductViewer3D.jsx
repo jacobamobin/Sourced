@@ -1,37 +1,94 @@
-import { useState, useRef, Suspense } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, Html, Environment, ContactShadows } from '@react-three/drei'
+import { useState, useRef, Suspense, useMemo } from 'react'
+import { Canvas, useFrame, useLoader } from '@react-three/fiber'
+import { OrbitControls, Html, Environment, ContactShadows, Float, Stars } from '@react-three/drei'
 import { motion } from 'framer-motion'
+import * as THREE from 'three'
 
-// Component mesh with hover/click interaction
-function ComponentMesh({ component, isSelected, onClick, exploded }) {
+// Premium material presets
+const MATERIALS = {
+  metal: { metalness: 0.9, roughness: 0.2, color: '#94a3b8' },
+  glass: { metalness: 0.1, roughness: 0.05, transmission: 0.9, thickness: 0.5, color: '#e2e8f0' },
+  plastic: { metalness: 0.1, roughness: 0.8, color: '#1e293b' },
+  silicon: { metalness: 0.6, roughness: 0.4, color: '#334155' },
+  battery: { metalness: 0.3, roughness: 0.5, color: '#0f172a' },
+  default: { metalness: 0.5, roughness: 0.5, color: '#64748b' }
+}
+
+function MainProductImage({ imageUrl, dimensions, exploded, transparent }) {
+  const texture = useLoader(THREE.TextureLoader, imageUrl)
   const meshRef = useRef()
-  const [hovered, setHovered] = useState(false)
-
-  // Get position (exploded view pushes internal components outward)
-  const position = component.position || [0, 0, 0]
-  const scale = component.scale || [0.1, 0.1, 0.05]
-
-  const explodedPosition = exploded && component.internal
-    ? [position[0] * 2, position[1] * 1.5, position[2] + 0.3]
-    : position
-
-  useFrame(() => {
-    if (meshRef.current && hovered) {
-      meshRef.current.rotation.y += 0.01
+  
+  // Calculate aspect ratio to maintain image proportions
+  const aspect = texture.image ? texture.image.width / texture.image.height : 1
+  const width = dimensions[0]
+  const height = width / aspect
+  
+  useFrame((state, delta) => {
+    if (meshRef.current) {
+      // If exploded, move back slightly and fade out
+      const targetZ = exploded ? -0.5 : 0
+      const targetOpacity = exploded ? 0.2 : (transparent ? 0.5 : 1)
+      
+      meshRef.current.position.z = THREE.MathUtils.lerp(meshRef.current.position.z, targetZ, delta * 2)
+      meshRef.current.material.opacity = THREE.MathUtils.lerp(meshRef.current.material.opacity, targetOpacity, delta * 2)
     }
   })
 
-  // Color based on state
-  const getColor = () => {
-    if (isSelected) return '#10b981' // emerald
-    if (hovered) return '#06b6d4' // cyan
-    return component.color || '#4a5568' // default gray
-  }
+  return (
+    <mesh ref={meshRef} position={[0, 0, 0]}>
+      <planeGeometry args={[width, height]} />
+      <meshBasicMaterial map={texture} transparent side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
+
+function ComponentMesh({ component, isSelected, onClick, exploded, index, customOpacity, customTransparent, customWireframe }) {
+  const meshRef = useRef()
+  const [hovered, setHovered] = useState(false)
+
+  // Parse position and scale
+  const position = useMemo(() => component.position || [0, 0, 0], [component])
+  const scale = useMemo(() => component.scale || [0.05, 0.05, 0.05], [component])
+
+  // Determine material props
+  const materialType = component.material || 'default'
+  const materialProps = MATERIALS[materialType] || MATERIALS.default
+
+  // Exploded view calculation
+  // Add some randomness to explosion vector to avoid straight lines
+  const explosionVector = useMemo(() => {
+    const x = position[0] * 2.5 + (Math.random() - 0.5) * 0.2
+    const y = position[1] * 2.5 + (Math.random() - 0.5) * 0.2
+    const z = position[2] * 4 + (Math.random() - 0.5) * 0.5
+    return [x, y, z]
+  }, [position])
+
+  // Don't explode if it's the shell/chassis
+  const isShell = component.name.toLowerCase().includes('chassis') || 
+                  component.name.toLowerCase().includes('frame') || 
+                  component.name.toLowerCase().includes('body') ||
+                  component.name.toLowerCase().includes('shell')
+
+  const targetPosition = (exploded && component.internal !== false && !isShell)
+    ? explosionVector
+    : position
+
+  useFrame((state, delta) => {
+    if (meshRef.current) {
+      // Smooth lerp to target position
+      meshRef.current.position.lerp(new THREE.Vector3(...targetPosition), delta * 3)
+
+      // Hover rotation
+      if (hovered) {
+        meshRef.current.rotation.y += delta
+      } else {
+        meshRef.current.rotation.y = THREE.MathUtils.lerp(meshRef.current.rotation.y, 0, delta * 5)
+      }
+    }
+  })
 
   return (
-    <group position={explodedPosition}>
-      {/* Main mesh */}
+    <group>
       <mesh
         ref={meshRef}
         onClick={(e) => {
@@ -48,139 +105,198 @@ function ComponentMesh({ component, isSelected, onClick, exploded }) {
           document.body.style.cursor = 'default'
         }}
         scale={scale}
+        rotation={component.rotation || [0, 0, 0]}
       >
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial
-          color={getColor()}
-          metalness={0.5}
-          roughness={0.3}
-          transparent
-          opacity={isSelected ? 1 : 0.85}
-        />
+        {/* Dynamic geometry based on component type */}
+        {component.geometry === 'cylinder' && <cylinderGeometry args={[0.5, 0.5, 1, 32]} />}
+        {component.geometry === 'sphere' && <sphereGeometry args={[0.5, 32, 32]} />}
+        {component.geometry === 'capsule' && <capsuleGeometry args={[0.4, 0.5, 16, 32]} />}
+        {component.geometry === 'torus' && <torusGeometry args={[0.4, 0.15, 16, 32]} />}
+        {(!component.geometry || component.geometry === 'box' || component.geometry === 'roundedBox') && (
+          <boxGeometry args={[1, 1, 1]} />
+        )}
+        {materialType === 'glass' ? (
+          <meshPhysicalMaterial
+            {...materialProps}
+            transparent
+            opacity={customOpacity !== undefined ? customOpacity : 0.6}
+            wireframe={customWireframe}
+          />
+        ) : (
+          <meshStandardMaterial
+            {...materialProps}
+            color={isSelected ? '#10b981' : (hovered ? '#06b6d4' : (component.color || materialProps.color))}
+            emissive={isSelected ? '#059669' : '#000000'}
+            emissiveIntensity={isSelected ? 0.5 : 0}
+            transparent={customTransparent || customOpacity < 1}
+            opacity={customOpacity !== undefined ? customOpacity : 1}
+            wireframe={customWireframe}
+          />
+        )}
+
+        {/* Edge highlight for tech look - only for box geometries */}
+        {(!component.geometry || component.geometry === 'box' || component.geometry === 'roundedBox') && !customWireframe && (
+          <lineSegments>
+            <edgesGeometry args={[new THREE.BoxGeometry(1, 1, 1)]} />
+            <lineBasicMaterial color={isSelected ? "#34d399" : "#475569"} opacity={0.3} transparent />
+          </lineSegments>
+        )}
       </mesh>
 
-      {/* Hover label */}
+      {/* Hover Label - Only show if hovered and not too many items labeled at once */}
       {hovered && (
-        <Html position={[0, scale[1] / 2 + 0.1, 0]} center>
-          <div className="bg-slate-900/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-700 whitespace-nowrap">
-            <p className="text-white text-sm font-medium">{component.name}</p>
-            {component.manufacturer && (
-              <p className="text-slate-400 text-xs">{component.manufacturer}</p>
-            )}
+        <Html position={targetPosition} center distanceFactor={20} zIndexRange={[100, 0]}>
+          <div className="pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, y: 5, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className="bg-slate-900/95 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-700/50 shadow-lg max-w-[100px]"
+            >
+              <p className="text-white text-[8px] font-semibold uppercase text-center truncate leading-tight">{component.name}</p>
+            </motion.div>
           </div>
         </Html>
-      )}
-
-      {/* Selection indicator */}
-      {isSelected && (
-        <mesh scale={[scale[0] * 1.1, scale[1] * 1.1, scale[2] * 1.1]}>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial
-            color="#10b981"
-            transparent
-            opacity={0.3}
-            wireframe
-          />
-        </mesh>
       )}
     </group>
   )
 }
 
-// Device body mesh
-function DeviceBody({ deviceType, transparent }) {
-  const dimensions = {
-    smartphone: [0.4, 0.85, 0.08],
-    laptop: [1.2, 0.8, 0.05],
-    tablet: [0.6, 0.85, 0.06],
-  }
+function Scene({ modelData, components, selectedComponent, onComponentClick, exploded, transparent, imageUrl }) {
+  // Identify shell/body component
+  const shellComponent = useMemo(() => {
+    return components?.find(c => 
+      c.name.toLowerCase().includes('chassis') || 
+      c.name.toLowerCase().includes('frame') || 
+      c.name.toLowerCase().includes('body') || 
+      c.name.toLowerCase().includes('shell') ||
+      c.name.toLowerCase().includes('case') ||
+      c.name.toLowerCase().includes('enclosure')
+    )
+  }, [components])
 
-  const [width, height, depth] = dimensions[deviceType] || dimensions.smartphone
-
-  return (
-    <mesh position={[0, 0, 0]}>
-      <boxGeometry args={[width, height, depth]} />
-      <meshStandardMaterial
-        color="#1e293b"
-        metalness={0.8}
-        roughness={0.2}
-        transparent
-        opacity={transparent ? 0.15 : 0.9}
-      />
-    </mesh>
-  )
-}
-
-// Main scene component
-function Scene({ modelData, components, selectedComponent, onComponentClick, exploded, transparent }) {
+  // Device body shell (ghosted) - Only use if no shell component found
   const deviceType = modelData?.device_type || 'smartphone'
+  const dimensions = {
+    smartphone: [0.45, 0.9, 0.08],
+    laptop: [1.2, 0.8, 0.05],
+    tablet: [0.65, 0.9, 0.06],
+    'sports car': [1.8, 4.5, 1.2], // Approximate car dimensions scaled down
+    'car': [1.8, 4.5, 1.2],
+    'automobile': [1.8, 4.5, 1.2],
+  }
+  // Normalize dimensions if it's a car (the scene is usually small scale)
+  const scaleFactor = (deviceType.toLowerCase().includes('car') || deviceType.toLowerCase().includes('auto')) ? 0.2 : 1.0
+  
+  const [width, height, depth] = dimensions[deviceType.toLowerCase()] || dimensions.smartphone
 
   return (
     <>
-      {/* Lighting */}
-      <ambientLight intensity={0.5} />
-      <spotLight
-        position={[5, 5, 5]}
-        angle={0.3}
-        penumbra={1}
-        intensity={1}
-        castShadow
-      />
-      <pointLight position={[-5, -5, -5]} intensity={0.5} />
+      <ambientLight intensity={0.6} />
+      <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
+      <pointLight position={[-10, -10, -10]} intensity={0.8} color="#3b82f6" />
+      <directionalLight position={[0, 5, 5]} intensity={1} />
 
-      {/* Environment */}
       <Environment preset="city" />
+      <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      {/* Device body */}
-      <DeviceBody deviceType={deviceType} transparent={transparent} />
+      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.2}>
+        <group rotation={[0, -Math.PI / 6, 0]} scale={scaleFactor}>
+          
+          {/* Main Product Image (The "Real" Shell) */}
+          {imageUrl && (
+            <MainProductImage 
+              imageUrl={imageUrl} 
+              dimensions={[width, height]} 
+              exploded={exploded} 
+              transparent={transparent} 
+            />
+          )}
 
-      {/* Component meshes */}
-      {components?.map((comp) => (
-        <ComponentMesh
-          key={comp.id}
-          component={comp}
-          isSelected={selectedComponent?.id === comp.id}
-          onClick={onComponentClick}
-          exploded={exploded}
-        />
-      ))}
+          {/* Ghost Body - Only render if no explicit shell component found AND no image */}
+          {!shellComponent && !imageUrl && (
+            <mesh position={[0, 0, 0]}>
+              <boxGeometry args={[width, height, depth]} />
+              <meshPhysicalMaterial
+                color="#1e293b"
+                metalness={0.8}
+                roughness={0.2}
+                transparent
+                opacity={transparent ? 0.05 : 0.15}
+                transmission={0.5}
+                thickness={0.5}
+                wireframe={exploded}
+              />
+            </mesh>
+          )}
 
-      {/* Ground shadow */}
-      <ContactShadows
-        position={[0, -0.5, 0]}
-        opacity={0.4}
-        scale={3}
-        blur={2}
-        far={1}
-      />
+          {/* Components */}
+          {components?.map((comp, i) => {
+            // Determine if this is the shell
+            const isShell = comp === shellComponent
+            
+            // Visibility logic:
+            // If NOT exploded: Show Shell (opaque), Hide Internals (or show faintly)
+            // If exploded: Show Shell (transparent/wireframe), Show Internals (solid)
+            
+            let opacity = 1.0
+            let isTransparent = false
+            let isWireframe = false
+            
+            if (isShell) {
+               // If we have a main image, we might want to hide the generated shell initially
+               // or make it wireframe to match the image
+               if (imageUrl && !exploded) {
+                 return null // Hide generated shell if we have the real image and not exploded
+               }
+               
+               if (exploded) {
+                 opacity = 0.1
+                 isTransparent = true
+                 isWireframe = true
+               } else {
+                 opacity = transparent ? 0.3 : 1.0
+                 isTransparent = transparent
+               }
+            } else {
+               // Internal component
+               if (!exploded && !transparent) {
+                 // Hide internals when collapsed and solid
+                 return null
+               }
+            }
 
-      {/* Controls */}
+            return (
+              <ComponentMesh
+                key={comp.id || i}
+                index={i}
+                component={comp}
+                isSelected={selectedComponent?.id === comp.id}
+                onClick={onComponentClick}
+                exploded={exploded}
+                customOpacity={opacity}
+                customTransparent={isTransparent}
+                customWireframe={isWireframe}
+              />
+            )
+          })}
+        </group>
+      </Float>
+
+      <ContactShadows position={[0, -1.5, 0]} opacity={0.4} scale={10} blur={2.5} far={4} />
+
       <OrbitControls
-        enablePan={true}
-        enableZoom={true}
-        enableRotate={true}
-        minDistance={0.5}
-        maxDistance={5}
-        autoRotate={!selectedComponent}
+        enablePan={false}
+        minPolarAngle={Math.PI / 4}
+        maxPolarAngle={Math.PI / 1.5}
+        minDistance={1}
+        maxDistance={4}
+        autoRotate={!selectedComponent && !exploded}
         autoRotateSpeed={0.5}
       />
     </>
   )
 }
 
-// Loading fallback
-function Loader() {
-  return (
-    <Html center>
-      <div className="flex flex-col items-center">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-400 text-sm mt-2">Loading 3D scene...</p>
-      </div>
-    </Html>
-  )
-}
-
-// Main exported component
 export default function ProductViewer3D({
   modelData,
   components,
@@ -191,14 +307,9 @@ export default function ProductViewer3D({
   const [transparent, setTransparent] = useState(false)
 
   return (
-    <div className="relative w-full h-full">
-      {/* 3D Canvas */}
-      <Canvas
-        camera={{ position: [0, 0, 2], fov: 50 }}
-        shadows
-        className="bg-slate-900"
-      >
-        <Suspense fallback={<Loader />}>
+    <div className="relative w-full h-full bg-gradient-to-b from-slate-900 to-slate-950 overflow-hidden rounded-2xl border border-slate-800 shadow-2xl">
+      <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 45 }} dpr={[1, 2]} style={{ width: '100%', height: '100%' }}>
+        <Suspense fallback={null}>
           <Scene
             modelData={modelData}
             components={components}
@@ -210,45 +321,48 @@ export default function ProductViewer3D({
         </Suspense>
       </Canvas>
 
-      {/* Controls overlay */}
-      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-        <div className="flex gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setExploded(!exploded)}
-            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              exploded
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800/80 backdrop-blur-sm text-slate-300 hover:bg-slate-700'
+      {/* Overlay Controls */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 p-2 bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-2xl">
+        <button
+          onClick={() => setExploded(!exploded)}
+          className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all duration-300 flex items-center gap-2 ${exploded
+              ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
             }`}
-          >
-            {exploded ? '🔧 Assembled' : '💥 Explode'}
-          </motion.button>
+        >
+          <span>{exploded ? 'Merge' : 'Explode'}</span>
+        </button>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setTransparent(!transparent)}
-            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              transparent
-                ? 'bg-cyan-600 text-white'
-                : 'bg-slate-800/80 backdrop-blur-sm text-slate-300 hover:bg-slate-700'
+        <div className="w-px bg-slate-700/50 mx-1" />
+
+        <button
+          onClick={() => setTransparent(!transparent)}
+          className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all duration-300 flex items-center gap-2 ${transparent
+              ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
             }`}
-          >
-            {transparent ? '👁️ Solid' : '🔍 X-Ray'}
-          </motion.button>
-        </div>
+        >
+          <span>{transparent ? 'Solid' : 'X-Ray'}</span>
+        </button>
+      </div>
 
-        <div className="text-slate-400 text-xs bg-slate-800/80 backdrop-blur-sm px-3 py-2 rounded-lg">
-          Drag to rotate • Scroll to zoom
+      {/* Stats Badge */}
+      <div className="absolute top-6 left-6 flex flex-col gap-2">
+        <div className="bg-slate-900/80 backdrop-blur-md px-4 py-3 rounded-xl border border-slate-700/50 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div>
+              <p className="text-slate-400 text-[10px] uppercase tracking-wider font-bold">Components</p>
+              <p className="text-white text-xl font-bold font-mono leading-none mt-1">{components?.length || 0}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Component count */}
-      <div className="absolute top-4 left-4 bg-slate-800/80 backdrop-blur-sm px-3 py-2 rounded-lg">
-        <span className="text-emerald-400 font-semibold">{components?.length || 0}</span>
-        <span className="text-slate-400 text-sm ml-1">components</span>
+      {/* Instructions */}
+      <div className="absolute top-6 right-6 text-right pointer-events-none opacity-50">
+        <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Interactive 3D View</p>
+        <p className="text-slate-600 text-[10px] mt-1">Drag to rotate • Scroll to zoom</p>
       </div>
     </div>
   )

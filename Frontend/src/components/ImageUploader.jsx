@@ -1,25 +1,33 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function ImageUploader({ onUpload }) {
   const [preview, setPreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [showCamera, setShowCamera] = useState(false)
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const streamRef = useRef(null)
 
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0]
     if (file) {
-      // Create preview
-      const reader = new FileReader()
-      reader.onload = () => {
-        setPreview(reader.result)
-      }
-      reader.readAsDataURL(file)
-
-      // Trigger upload
-      onUpload(file)
+      handleFile(file)
     }
   }, [onUpload])
+
+  const handleFile = (file) => {
+    // Create preview
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPreview(reader.result)
+    }
+    reader.readAsDataURL(file)
+
+    // Trigger upload
+    onUpload(file)
+  }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -31,6 +39,62 @@ export default function ImageUploader({ onUpload }) {
     onDragEnter: () => setIsDragging(true),
     onDragLeave: () => setIsDragging(false),
   })
+
+  const startCamera = async () => {
+    try {
+      setShowCamera(true)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } 
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err)
+      alert("Could not access camera. Please ensure you have granted permission.")
+      setShowCamera(false)
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setShowCamera(false)
+  }
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      
+      // Draw video frame to canvas
+      const context = canvas.getContext('2d')
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      
+      // Convert to blob/file
+      canvas.toBlob((blob) => {
+        const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" })
+        handleFile(file)
+        stopCamera()
+      }, 'image/jpeg', 0.95)
+    }
+  }
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [])
 
   return (
     <motion.div
@@ -135,6 +199,26 @@ export default function ImageUploader({ onUpload }) {
         </div>
       </div>
 
+      {/* Camera Button */}
+      {!preview && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              startCamera()
+            }}
+            className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-full transition-colors font-medium shadow-lg"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Take Photo
+          </button>
+        </div>
+      )}
+
       {/* Sample products suggestion */}
       <div className="mt-6 text-center">
         <p className="text-slate-500 text-sm mb-3">Try with:</p>
@@ -149,6 +233,46 @@ export default function ImageUploader({ onUpload }) {
           ))}
         </div>
       </div>
+
+      {/* Camera Modal */}
+      <AnimatePresence>
+        {showCamera && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          >
+            <div className="relative w-full max-w-2xl bg-slate-900 rounded-2xl overflow-hidden border border-slate-700">
+              <div className="relative aspect-video bg-black">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+              
+              <div className="p-6 flex justify-center gap-4 bg-slate-900">
+                <button
+                  onClick={stopCamera}
+                  className="px-6 py-2 bg-slate-700 text-white rounded-full hover:bg-slate-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={capturePhoto}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-500 transition-colors flex items-center gap-2"
+                >
+                  <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+                  Capture
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
