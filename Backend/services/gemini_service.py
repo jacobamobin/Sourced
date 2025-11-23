@@ -1,14 +1,13 @@
 """
 Gemini API Service
-Handles all interactions with Google's Gemini 2.5 Pro API
+Handles all interactions with Google's Gemini API
 - Product identification (Vision)
 - Component analysis
-- Supply chain research (with Google Search grounding)
+- Supply chain research
 """
 
 import os
 import json
-import base64
 from PIL import Image
 import io
 
@@ -16,22 +15,24 @@ import io
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 try:
-    from google import genai
-    from google.genai import types
+    import google.generativeai as genai
 
     if GEMINI_API_KEY:
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        vision_model = genai.GenerativeModel('gemini-1.5-flash')
     else:
-        client = None
+        model = None
+        vision_model = None
 except ImportError:
-    client = None
+    model = None
+    vision_model = None
     genai = None
-    types = None
 
 
 def is_configured():
     """Check if Gemini is properly configured"""
-    return client is not None and GEMINI_API_KEY is not None
+    return model is not None and GEMINI_API_KEY is not None
 
 
 def identify_product(image_path: str) -> dict:
@@ -43,11 +44,8 @@ def identify_product(image_path: str) -> dict:
         return {"error": "Gemini API not configured"}
 
     try:
-        # Read and encode image
-        with open(image_path, 'rb') as f:
-            image_data = f.read()
-
-        image = Image.open(io.BytesIO(image_data))
+        # Load image
+        image = Image.open(image_path)
 
         prompt = """Analyze this product image carefully and identify:
 
@@ -75,10 +73,7 @@ Return ONLY valid JSON in this exact format:
 
 Be specific about component manufacturers when known. If unsure, provide best estimate."""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-pro-preview-05-06",
-            contents=[prompt, image]
-        )
+        response = vision_model.generate_content([prompt, image])
 
         # Parse JSON from response
         response_text = response.text.strip()
@@ -86,13 +81,29 @@ Be specific about component manufacturers when known. If unsure, provide best es
         # Handle markdown code blocks
         if response_text.startswith('```'):
             lines = response_text.split('\n')
+            # Remove first and last lines (```json and ```)
             response_text = '\n'.join(lines[1:-1])
+
+        # Also handle if it starts with ```json
+        if response_text.startswith('json'):
+            response_text = response_text[4:].strip()
 
         return json.loads(response_text)
 
     except json.JSONDecodeError as e:
         # Try to extract structured data from unstructured response
-        return extract_product_info(response.text)
+        try:
+            return extract_product_info(response.text)
+        except:
+            return {
+                "brand": "Unknown",
+                "model": "Unknown Product",
+                "category": "electronics",
+                "year": "2024",
+                "confidence": 30,
+                "components": [],
+                "error": f"JSON parse error: {str(e)}"
+            }
     except Exception as e:
         return {"error": str(e)}
 
@@ -110,12 +121,14 @@ def extract_product_info(raw_text: str) -> dict:
 Return format:
 {{"brand": "...", "model": "...", "category": "...", "year": "...", "confidence": 0-100, "components": []}}"""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
+        text = response.text.strip()
 
-        return json.loads(response.text.strip())
+        if text.startswith('```'):
+            lines = text.split('\n')
+            text = '\n'.join(lines[1:-1])
+
+        return json.loads(text)
     except:
         return {
             "brand": "Unknown",
@@ -127,58 +140,15 @@ Return format:
         }
 
 
-def search_component_images(component_name: str, product_info: dict) -> list:
-    """
-    Use Gemini with Google Search grounding to find teardown/component images
-    Returns: List of image URLs for the component
-    """
-    if not is_configured():
-        return []
-
-    try:
-        grounding_tool = types.Tool(google_search=types.GoogleSearch())
-
-        product_name = f"{product_info.get('brand', '')} {product_info.get('model', '')}"
-
-        prompt = f"""Search for teardown or component images of: {component_name}
-For product: {product_name}
-
-Find high-quality images showing this specific component isolated or in a teardown.
-Look for iFixit teardowns, technical review sites, and official documentation.
-
-Return ONLY a JSON array of image URLs (max 3):
-["url1", "url2", "url3"]
-
-If no specific images found, return an empty array: []"""
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt,
-            config=types.GenerateContentConfig(tools=[grounding_tool])
-        )
-
-        # Parse URLs from response
-        text = response.text.strip()
-        if text.startswith('['):
-            return json.loads(text)
-        return []
-
-    except Exception as e:
-        print(f"Error searching component images: {e}")
-        return []
-
-
 def research_supply_chain(component: dict, product_info: dict) -> dict:
     """
-    Research supply chain data for a component using Gemini with Google Search grounding
+    Research supply chain data for a component using Gemini
     Returns: Manufacturing locations, suppliers, raw materials, etc.
     """
     if not is_configured():
         return {"error": "Gemini API not configured"}
 
     try:
-        grounding_tool = types.Tool(google_search=types.GoogleSearch())
-
         component_name = component.get('name', component.get('id', 'Unknown'))
         manufacturer = component.get('manufacturer', 'Unknown')
         product_name = f"{product_info.get('brand', '')} {product_info.get('model', '')}"
@@ -189,17 +159,11 @@ Component: {component_name}
 Manufacturer: {manufacturer}
 Used in: {product_name}
 
-Find and return:
+Based on your knowledge, provide:
 1. Primary manufacturing locations (factory name, city, country)
 2. Key suppliers in the supply chain
-3. Raw materials required and their source countries
-4. Any sustainability certifications (ISO 14001, RoHS, etc.)
-
-Focus on verifiable information from:
-- Company sustainability reports
-- Industry analysis
-- News articles about supply chain
-- Official company statements
+3. Raw materials required and their typical source countries
+4. Common sustainability certifications
 
 Return ONLY valid JSON:
 {{
@@ -207,56 +171,37 @@ Return ONLY valid JSON:
     "component_name": "{component_name}",
     "manufacturer": "{manufacturer}",
     "manufacturing_locations": [
-        {{"facility": "TSMC Fab 18", "city": "Tainan", "country": "Taiwan", "type": "chip_fabrication"}}
+        {{"facility": "Factory Name", "city": "City", "country": "Country", "type": "manufacturing"}}
     ],
     "suppliers": [
-        {{"name": "ASML", "provides": "EUV Lithography Machines", "country": "Netherlands"}}
+        {{"name": "Supplier Name", "provides": "What they provide", "country": "Country"}}
     ],
     "raw_materials": [
-        {{"material": "Silicon", "source_country": "China", "source_region": "Xinjiang"}},
-        {{"material": "Rare Earth Elements", "source_country": "China", "source_region": "Inner Mongolia"}}
+        {{"material": "Material Name", "source_country": "Country"}}
     ],
     "certifications": ["ISO 14001", "RoHS"],
     "sustainability_notes": "Brief notes about sustainability practices"
 }}"""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt,
-            config=types.GenerateContentConfig(tools=[grounding_tool])
-        )
+        response = model.generate_content(prompt)
 
         # Parse response
         text = response.text.strip()
         if text.startswith('```'):
             lines = text.split('\n')
             text = '\n'.join(lines[1:-1])
+        if text.startswith('json'):
+            text = text[4:].strip()
 
-        data = json.loads(text)
-
-        # Extract source citations if available
-        try:
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, 'grounding_chunks'):
-                        data['sources'] = [
-                            {
-                                "url": chunk.web.uri if hasattr(chunk, 'web') else "",
-                                "title": chunk.web.title if hasattr(chunk.web, 'title') else ""
-                            }
-                            for chunk in metadata.grounding_chunks[:5]
-                        ]
-        except:
-            pass
-
-        return data
+        return json.loads(text)
 
     except json.JSONDecodeError:
         return {
             "component_id": component.get('id', 'unknown'),
             "component_name": component.get('name', 'Unknown'),
+            "manufacturing_locations": [],
+            "suppliers": [],
+            "raw_materials": [],
             "error": "Could not parse supply chain data"
         }
     except Exception as e:
@@ -289,23 +234,20 @@ Consider typical {category} internal layout:
 - Camera modules at top corners
 - Memory near processor
 
-Return JSON array with positions:
+Return ONLY a JSON array with positions (no markdown, no explanation):
 [
     {{"id": "cpu", "position": [0, 0, 0], "scale": [0.15, 0.15, 0.02]}},
     {{"id": "battery", "position": [0, -0.2, -0.02], "scale": [0.4, 0.5, 0.03]}}
-]
+]"""
 
-Use realistic proportions for a {category}."""
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
 
         text = response.text.strip()
         if text.startswith('```'):
             lines = text.split('\n')
             text = '\n'.join(lines[1:-1])
+        if text.startswith('json'):
+            text = text[4:].strip()
 
         positions = json.loads(text)
 

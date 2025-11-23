@@ -1,0 +1,96 @@
+{
+  "model_url": "/models/213c4c81888f77240c5d845aa0044db0.glb",
+  "model_type": "placeholder",
+  "components": [
+    {
+      "id": "display",
+      "name": "Display Screen",
+      "position": [
+        0,
+        0.3,
+        0.04
+      ],
+      "scale": [
+        0.35,
+        0.7,
+        0.01
+      ],
+      "color": "#1a1a2e",
+      "internal": false
+    },
+    {
+      "id": "cpu",
+      "name": "Processor",
+      "position": [
+        0,
+        0.1,
+        0
+      ],
+      "scale": [
+        0.08,
+        0.08,
+        0.02
+      ],
+      "color": "#4a5568",
+      "internal": true
+    },
+    {
+      "id": "battery",
+      "name": "Battery",
+      "position": [
+        0,
+        -0.15,
+        0
+      ],
+      "scale": [
+        0.3,
+        0.35,
+        0.03
+      ],
+      "color": "#2d3748",
+      "internal": true
+    },
+    {
+      "id": "camera",
+      "name": "Camera Module",
+      "position": [
+        -0.12,
+        0.55,
+        0.03
+      ],
+      "scale": [
+        0.12,
+        0.12,
+        0.02
+      ],
+      "color": "#1a202c",
+      "internal": false
+    },
+    {
+      "id": "memory",
+      "name": "RAM Module",
+      "position": [
+        0.08,
+        0.15,
+        0
+      ],
+      "scale": [
+        0.06,
+        0.04,
+        0.01
+      ],
+      "color": "#718096",
+      "internal": true
+    }
+  ],
+  "device_type": "smartphone",
+  "bounds": {
+    "width": 0.4,
+    "height": 0.8,
+    "depth": 0.08
+  },
+  "processing_time": 2.5033950805664062e-05,
+  "cached": false,
+  "method": "placeholder",
+  "note": "Using placeholder model. Configure SAM 3D for real 3D generation."
+}

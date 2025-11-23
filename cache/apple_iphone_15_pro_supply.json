@@ -1,0 +1,55 @@
+{
+  "product": "Apple iPhone 15 Pro",
+  "supply_chain": [
+    {
+      "component_id": "cpu",
+      "error": "404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+    },
+    {
+      "component_id": "display",
+      "error": "404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+    },
+    {
+      "component_id": "battery",
+      "error": "404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+    },
+    {
+      "component_id": "camera_main",
+      "error": "404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+    },
+    {
+      "component_id": "memory",
+      "error": "404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+    }
+  ],
+  "assembly_location": {
+    "facility": "Main Assembly",
+    "city": "Zhengzhou",
+    "country": "China",
+    "lat": 34.7466,
+    "lng": 113.6253,
+    "type": "final_assembly"
+  },
+  "cached": false,
+  "globe_data": {
+    "nodes": [
+      {
+        "id": "assembly_Zhengzhou",
+        "name": "Main Assembly",
+        "lat": 34.7466,
+        "lng": 113.6253,
+        "type": "assembly",
+        "size": 1.5,
+        "color": "#ef4444"
+      }
+    ],
+    "arcs": [],
+    "stats": {
+      "total_nodes": 1,
+      "total_arcs": 0,
+      "manufacturing_sites": 0,
+      "material_sources": 0
+    }
+  },
+  "total_countries": 0
+}
