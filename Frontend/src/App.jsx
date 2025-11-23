@@ -128,17 +128,16 @@ function App() {
       // Process B: Supply Chain Research (Parallel)
       // We use the Gemini components because they have names (SAM components don't)
       const allComponents = productInfo.components || []
-      // OPTIMIZATION: Only research the first 3 components initially to speed up the UI
-      // The rest will be loaded on demand when clicked
-      const componentsToResearch = allComponents.slice(0, 3)
-      
+      // Load ALL components sequentially in batches
+      const componentsToResearch = allComponents
+
       let completedCount = 0
-      addLog(`Starting initial supply chain research for ${componentsToResearch.length} priority components...`)
+      addLog(`Starting full supply chain research for all ${componentsToResearch.length} components...`)
 
       const batchSize = 3
       for (let i = 0; i < componentsToResearch.length; i += batchSize) {
         const batch = componentsToResearch.slice(i, i + batchSize)
-        addLog(`Researching batch ${Math.floor(i / batchSize) + 1}: ${batch.map(c => c.name).join(', ')}`)
+        addLog(`Researching batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(componentsToResearch.length / batchSize)}: ${batch.map(c => c.name).join(', ')}`)
 
         const promises = batch.map(async (comp) => {
           try {
@@ -320,7 +319,7 @@ function App() {
 
       if (res.ok) {
         const chainData = await res.json()
-        
+
         setProductData(prev => {
           if (!prev) return prev
 
@@ -500,8 +499,8 @@ function App() {
                       key={mode.id}
                       onClick={() => setViewMode(mode.id)}
                       className={`px-3 py-1.5 text-sm rounded-md transition-all ${viewMode === mode.id
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-400 hover:text-white'
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-slate-400 hover:text-white'
                         }`}
                     >
                       {mode.label}
@@ -562,7 +561,7 @@ function App() {
                     See What's Inside.
                   </h1>
                   <p className="text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed">
-                    Discover the hidden journey of your electronics. From raw materials to manufacturing, 
+                    Discover the hidden journey of your electronics. From raw materials to manufacturing,
                     trace the global supply chain and understand the environmental impact of the devices you use every day.
                   </p>
                 </div>
@@ -612,16 +611,16 @@ function App() {
                 {/* SDG Section */}
                 <div className="bg-gradient-to-r from-emerald-900/20 to-slate-900 border border-emerald-500/20 rounded-2xl p-8 flex flex-col md:flex-row items-center gap-8">
                   <div className="flex-shrink-0">
-                    <img 
-                      src="/sdg12.png" 
-                      alt="UN SDG 12: Responsible Consumption and Production" 
+                    <img
+                      src="/sdg12.png"
+                      alt="UN SDG 12: Responsible Consumption and Production"
                       className="w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl"
                     />
                   </div>
                   <div className="text-left space-y-4">
                     <h3 className="text-2xl font-bold text-white">Supporting Responsible Consumption And Production</h3>
                     <p className="text-slate-300">
-                      We align with United Nations Sustainable Development Goal 12 to ensure sustainable consumption and production patterns. 
+                      We align with United Nations Sustainable Development Goal 12 to ensure sustainable consumption and production patterns.
                       By understanding where our products come from, we can make more informed, ethical choices.
                     </p>
                   </div>
@@ -808,8 +807,8 @@ function App() {
                         key={comp.id}
                         onClick={() => handleComponentSelect(comp)}
                         className={`p-3 rounded-lg text-left transition-all ${selectedComponent?.id === comp.id
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
                           }`}
                       >
                         <div className="font-medium text-sm truncate">{comp.name}</div>
